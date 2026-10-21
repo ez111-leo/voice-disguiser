@@ -104,6 +104,7 @@ body{
 .btn.small{padding:5px 10px;font-size:10px}
 
 .mode-btn{
+  display:block;width:100%;
   font-family:var(--font-mono);font-size:10px;padding:7px 10px;
   border-radius:4px;cursor:pointer;border:1px solid var(--border);
   background:var(--surface);color:var(--text);text-align:left;
@@ -111,6 +112,9 @@ body{
 }
 .mode-btn:hover{border-color:var(--accent2)}
 .mode-btn.selected{border-color:var(--accent2);background:rgba(56,152,255,.08);color:var(--accent2);box-shadow:0 0 6px rgba(56,152,255,.12)}
+.btn:focus-visible,.mode-btn:focus-visible,.theory-toggle:focus-visible{outline:2px solid var(--accent3);outline-offset:3px}
+.mode-btn:disabled{opacity:.5;cursor:not-allowed}
+.input-note{font-size:10px;line-height:1.6;color:var(--text);margin-top:8px}
 .info-row{display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:10px;padding:3px 0;color:var(--text-dim)}
 .info-row .val{color:var(--text-bright)}
 
@@ -161,19 +165,23 @@ body{
 
 /* ═══ MOBILE ═══ */
 @media(max-width:900px){
-  .main{flex-direction:column}
-  .panel{width:100%;flex-direction:row;flex-wrap:wrap;max-height:240px;gap:6px}
+  html,body{height:auto;min-height:100%;overflow:auto}
+  .header{flex-wrap:wrap;gap:10px;padding:10px 12px}
+  .header-right{flex-wrap:wrap;gap:8px;min-width:0}
+  .main{flex-direction:column;flex:none;overflow:visible}
+  .panel{width:100%;flex-direction:row;flex-wrap:wrap;max-height:none;gap:6px;overflow:visible}
   .panel-section{flex:1;min-width:140px}
   .header h1{font-size:14px}
   .header .subtitle{display:none}
-  .viz{gap:6px;padding:6px}
+  .viz{gap:6px;padding:6px;min-height:540px;flex:none}
   .scope-label{font-size:7px;top:4px;left:6px}
 }
 @media(max-width:500px){
-  .panel{padding:8px;gap:4px;max-height:200px}
+  .panel{padding:8px;gap:4px}
   .panel-section{padding:8px;min-width:120px}
   .btn{padding:6px 10px;font-size:10px}
 }
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
@@ -195,7 +203,7 @@ body{
     <span id="infoDur">-- s</span>
     <div class="status-indicator">
       <div class="status-dot ready" id="statusDot"></div>
-      <span id="statusText">就绪</span>
+      <span id="statusText" role="status" aria-live="polite">就绪</span>
     </div>
   </div>
 </div>
@@ -213,15 +221,16 @@ body{
         <button class="btn accent2" id="btnUpload" onclick="document.getElementById('fileInput').click()">📁 上传音频</button>
         <input type="file" id="fileInput" accept="audio/*" style="display:none" onchange="handleFile(event)">
       </div>
+      <p class="input-note">音频仅在本地处理。录音结束后生成变声结果；麦克风需要 HTTPS 或 localhost。</p>
     </div>
 
     <!-- MODE -->
     <div class="panel-section">
       <h3>🔮 变声模式</h3>
-      <div class="mode-btn" data-mode="m2f" onclick="selectMode('m2f',this)" style="margin-bottom:3px">男声 → 女声 α=1.6</div>
-      <div class="mode-btn" data-mode="f2m" onclick="selectMode('f2m',this)" style="margin-bottom:3px">女声 → 男声 α=0.625</div>
-      <div class="mode-btn" data-mode="m2c" onclick="selectMode('m2c',this)" style="margin-bottom:3px">男声 → 童声 α=2.2</div>
-      <div class="mode-btn" data-mode="f2c" onclick="selectMode('f2c',this)">女声 → 童声 α=1.5</div>
+      <button type="button" class="mode-btn" data-mode="m2f" aria-pressed="false" onclick="selectMode('m2f',this)" style="margin-bottom:3px">男声 → 女声 α=1.6</button>
+      <button type="button" class="mode-btn" data-mode="f2m" aria-pressed="false" onclick="selectMode('f2m',this)" style="margin-bottom:3px">女声 → 男声 α=0.625</button>
+      <button type="button" class="mode-btn" data-mode="m2c" aria-pressed="false" onclick="selectMode('m2c',this)" style="margin-bottom:3px">男声 → 童声 α=2.2</button>
+      <button type="button" class="mode-btn" data-mode="f2c" aria-pressed="false" onclick="selectMode('f2c',this)">女声 → 童声 α=1.5</button>
     </div>
 
     <!-- PLAYBACK -->
@@ -230,14 +239,14 @@ body{
       <div class="btn-row">
         <button class="btn primary" id="btnPlayOrig" onclick="playOriginal()" disabled>▶ 原始</button>
         <button class="btn accent2" id="btnPlayChanged" onclick="playChanged()" disabled>✦ 变声</button>
-        <button class="btn" id="btnStop" onclick="stopAll()" disabled>■</button>
+        <button class="btn" id="btnStop" onclick="stopAll()" aria-label="停止播放" disabled>■</button>
         <button class="btn accent3 small" id="btnDownload" onclick="downloadWAV()" disabled>⬇ 导出</button>
       </div>
       <div class="info-row" style="margin-top:6px"><span>变速播放</span><span class="val" id="infoSpeed">1.0×</span></div>
       <div class="btn-row" style="margin-top:4px">
-        <button class="btn small" data-speed="0.6" onclick="setSpeed(0.6)">0.6× 慢</button>
-        <button class="btn small active" data-speed="1" onclick="setSpeed(1.0)">1.0×</button>
-        <button class="btn small" data-speed="1.6" onclick="setSpeed(1.6)">1.6× 快</button>
+        <button class="btn small" data-speed="0.6" aria-pressed="false" onclick="setSpeed(0.6)">0.6× 慢</button>
+        <button class="btn small active" data-speed="1" aria-pressed="true" onclick="setSpeed(1.0)">1.0×</button>
+        <button class="btn small" data-speed="1.6" aria-pressed="false" onclick="setSpeed(1.6)">1.6× 快</button>
       </div>
     </div>
 
@@ -245,15 +254,15 @@ body{
     <div class="panel-section">
       <h3>🔧 滤波器</h3>
       <div class="btn-row">
-        <button class="btn active" id="btnFilterOn" onclick="toggleFilter(true)">带通 80‑4000Hz</button>
-        <button class="btn" id="btnFilterOff" onclick="toggleFilter(false)">旁路</button>
+        <button class="btn active" id="btnFilterOn" aria-pressed="true" onclick="toggleFilter(true)">带通 80‑4000Hz</button>
+        <button class="btn" id="btnFilterOff" aria-pressed="false" onclick="toggleFilter(false)">旁路</button>
       </div>
     </div>
 
     <!-- THEORY -->
-    <div class="theory-toggle" onclick="toggleTheory()" id="theoryToggle">
+    <button type="button" class="theory-toggle" onclick="toggleTheory()" id="theoryToggle" aria-expanded="false" aria-controls="theoryContent">
       <span class="arrow">▶</span> 📖 变声原理（点开展示给同学看）
-    </div>
+    </button>
     <div class="theory-content" id="theoryContent">
       <div class="theory-inner">
         <b>基频和共振峰是声音的部分特征</b><br>
@@ -273,7 +282,7 @@ body{
         重采样(改变音高) + SOLA时域拉伸(恢复时长)。未实现 LPC。<br><br>
         <b>关键参数</b><br>
         · 伸缩因子 α = 新基频 / 原基频<br>
-        · SOLA窗长40ms，重叠75%，搜索±10ms<br>
+        · SOLA窗长最多40ms，输入步长约窗长的25%，搜索±10ms<br>
         · IIR 带通滤波80-4000Hz衰减带外信号，不能去除全部噪声
       </div>
     </div>
@@ -311,6 +320,9 @@ const STATE = {
   processingVersion: 0, inputVersion: 0, isProcessing: false,
   isLoading: false, isRequestingMic: false,
   microphoneSource: null, recordingAnalyser: null,
+  playbackVersion: 0, isStartingPlayback: false,
+  visualizationDirty: true, lastVisualizationTime: -Infinity,
+  timeData: null, frequencyData: null,
 };
 const MODES = {
   m2f:{alpha:1.6,name:'男声→女声'},
@@ -324,7 +336,9 @@ const MODES = {
 // ============================================================
 function initAudio(){
   if(STATE.audioCtx) return;
-  STATE.audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+  const AudioContext=window.AudioContext||window.webkitAudioContext;
+  if(!AudioContext)throw new Error('当前浏览器不支持 Web Audio，请使用较新的 Chrome、Edge 或 Firefox。');
+  STATE.audioCtx = new AudioContext();
   STATE.analyserNode = STATE.audioCtx.createAnalyser();
   STATE.analyserNode.fftSize = 2048;
   STATE.analyserNode.smoothingTimeConstant = 0.7;
@@ -338,11 +352,14 @@ function initAudio(){
 async function startRecord(){
   if(STATE.isRecording||STATE.isRequestingMic||STATE.isLoading||STATE.isProcessing) return;
   STATE.isRequestingMic=true; updateButtons();
+  const requestVersion=STATE.inputVersion;
   let stream;
   try{
     initAudio();
+    if(!navigator.mediaDevices?.getUserMedia||typeof MediaRecorder==='undefined')throw new Error('当前环境不支持录音，请通过 HTTPS 或 localhost 使用支持录音的浏览器。');
     if(STATE.audioCtx.state==='suspended') await STATE.audioCtx.resume();
     stream = await navigator.mediaDevices.getUserMedia({audio:true});
+    if(!STATE.isRequestingMic||requestVersion!==STATE.inputVersion){stream.getTracks().forEach(t=>t.stop());return}
     stopAll();
     STATE.mediaRecorder = new MediaRecorder(stream);
     const recorder=STATE.mediaRecorder, inputVersion=++STATE.inputVersion;
@@ -355,12 +372,24 @@ async function startRecord(){
     STATE.recordingAnalyser=STATE.audioCtx.createAnalyser();
     STATE.recordingAnalyser.fftSize=2048;
     STATE.microphoneSource=STATE.audioCtx.createMediaStreamSource(stream);
+    const microphoneSource=STATE.microphoneSource;
     // The recording analyser deliberately has no speaker connection.
     STATE.microphoneSource.connect(STATE.recordingAnalyser);
     STATE.spectrogramData=[];
     STATE.recordedChunks = [];
+    STATE.mediaRecorder.onerror=event=>{
+      if(inputVersion!==STATE.inputVersion)return;
+      ++STATE.inputVersion;
+      microphoneSource.disconnect();stream.getTracks().forEach(t=>t.stop());
+      if(recorder.state==='recording'){try{recorder.stop()}catch{}}
+      STATE.microphoneSource=null;STATE.recordingAnalyser=null;
+      STATE.isRecording=false;STATE.isLoading=false;
+      setStatus('ready','录音中断，请检查麦克风后重试。');updateButtons();
+    };
     STATE.mediaRecorder.ondataavailable = e => {if(e.data.size>0) STATE.recordedChunks.push(e.data)};
     STATE.mediaRecorder.onstop = async ()=>{
+      microphoneSource.disconnect();stream.getTracks().forEach(t=>t.stop());
+      if(inputVersion!==STATE.inputVersion)return;
       STATE.isRecording=false; STATE.isLoading=true;
       STATE.microphoneSource?.disconnect(); STATE.microphoneSource=null;
       STATE.recordingAnalyser=null;
@@ -391,6 +420,20 @@ function stopRecord(){
     setStatus('ready','处理中...'); updateButtons();
   }
 }
+
+function cleanupAudio(){
+  ++STATE.inputVersion;++STATE.processingVersion;
+  STATE.isRecording=false;STATE.isLoading=false;STATE.isProcessing=false;STATE.isRequestingMic=false;
+  const recorder=STATE.mediaRecorder;
+  if(recorder){
+    recorder.onstop=null;recorder.onerror=null;
+    if(recorder.state==='recording'){try{recorder.stop()}catch{}}
+    recorder.stream.getTracks().forEach(track=>track.stop());
+  }
+  STATE.microphoneSource?.disconnect();STATE.microphoneSource=null;STATE.recordingAnalyser=null;
+  stopAll();
+}
+window.addEventListener('pagehide',cleanupAudio);
 
 // ============================================================
 // FILE UPLOAD
@@ -440,6 +483,7 @@ async function processAudio(){
   filtered = await offlineCtx.startRendering();
   if(version!==STATE.processingVersion) return false;
   }
+  STATE.filteredBuffer=filtered;
 
   // Resample - change pitch & formants
   const resampledLen=Math.max(1,Math.round(len/alpha));
@@ -452,8 +496,9 @@ async function processAudio(){
   if(version!==STATE.processingVersion) return false;
 
   // SOLA time-stretch
-  STATE.processedBuffer = solaTimeStretch(resampledBuffer,len,sr);
-  STATE.filteredBuffer=filtered;
+  const processed=await solaTimeStretchAsync(resampledBuffer,len,sr,version);
+  if(version!==STATE.processingVersion||!processed) return false;
+  STATE.processedBuffer=processed;
   precomputeSpectrum(orig); estimatePitch();
   setStatus('ready','音频已就绪');
   return true;
@@ -462,68 +507,78 @@ async function processAudio(){
 }
 
 // SOLA
-function solaTimeStretch(buffer,targetLen,sr){
-  const ch = buffer.numberOfChannels, origLen = buffer.length;
-  if(origLen===targetLen) return buffer;
-  const alpha = targetLen/origLen;
-  const winLen = Math.min(origLen,targetLen,Math.round(0.04*sr));
-  const hopAna = Math.max(4,Math.round(winLen*0.25));
-  const hopSyn = Math.max(4,Math.round(hopAna*alpha));
-  const searchLen = Math.round(0.01*sr);
-  const newCtx = new OfflineAudioContext(ch,targetLen,sr);
-  const outBuf = newCtx.createBuffer(ch,targetLen,sr);
-  // Clips too small for a useful analysis window still retain the requested duration.
+function* solaFrames(buffer,targetLen,sr){
+  const ch=buffer.numberOfChannels,origLen=buffer.length;
+  if(origLen===targetLen)return buffer;
+  const outBuf=STATE.audioCtx.createBuffer(ch,targetLen,sr);
+  const inputs=Array.from({length:ch},(_,c)=>buffer.getChannelData(c));
+  const outputs=Array.from({length:ch},(_,c)=>outBuf.getChannelData(c));
   if(Math.min(origLen,targetLen)<100){
-    for(let c=0;c<ch;c++){
-      const input=buffer.getChannelData(c),output=outBuf.getChannelData(c);
-      for(let i=0;i<targetLen;i++){
-        const pos=targetLen===1?0:i*(origLen-1)/(targetLen-1),left=Math.floor(pos),fraction=pos-left;
-        output[i]=input[left]*(1-fraction)+input[Math.min(left+1,origLen-1)]*fraction;
-      }
+    for(let c=0;c<ch;c++)for(let i=0;i<targetLen;i++){
+      const pos=targetLen===1?0:i*(origLen-1)/(targetLen-1),left=Math.floor(pos),fraction=pos-left;
+      outputs[c][i]=inputs[c][left]*(1-fraction)+inputs[c][Math.min(left+1,origLen-1)]*fraction;
     }
     return outBuf;
   }
-
+  const ratio=targetLen/origLen;
+  const winLen=Math.min(origLen,targetLen,Math.round(.04*sr));
+  const hop=Math.max(1,Math.min(Math.floor(winLen/2),Math.round(winLen*.25*ratio)));
+  const search=Math.round(.01*sr),norm=new Float32Array(targetLen);
+  const windowValues=Float32Array.from({length:winLen},(_,i)=>.5*(1-Math.cos(2*Math.PI*(i+.5)/winLen)));
+  // Choose one channel for alignment; every channel uses the same source positions.
+  let reference=0,mostEnergy=-1;
   for(let c=0;c<ch;c++){
-    const input = buffer.getChannelData(c);
-    const output = new Float32Array(targetLen);
-    const norm = new Float32Array(targetLen);
-    let posIn=0, posOut=0;
-    while(posOut<targetLen){
-      for(let i=0;i<winLen&&posOut+i<targetLen&&posIn+i<origLen;i++){
-        const w=0.5*(1-Math.cos(2*Math.PI*(i+0.5)/winLen));
-        output[posOut+i]+=input[posIn+i]*w; norm[posOut+i]+=w;
-      }
-      posOut+=hopSyn;
-      // Anchor each search to the requested time mapping, rather than accumulating drift.
-      const expectedNext=Math.min(origLen-1,Math.round(posOut/alpha));
-      if(expectedNext+winLen<=origLen){
-        const sStart=Math.max(0,expectedNext-searchLen);
-        const sEnd=Math.min(origLen-winLen,expectedNext+searchLen);
-        if(sEnd>sStart&&posOut>winLen){
-          const refStart=posOut;
-          const tLen=Math.min(winLen-hopSyn,targetLen-refStart);
-          let bestCorr=-Infinity,bestPos=expectedNext;
-          for(let k=sStart;k<=sEnd;k++){
-            if(k+tLen>origLen) continue;
-            let corr=0,tNorm=0,cNorm=0;
-            for(let j=0;j<tLen;j++){
-              const ref=output[refStart+j]/(norm[refStart+j]+1e-12);
-              corr+=ref*input[k+j];
-              tNorm+=ref*ref;
-              cNorm+=input[k+j]*input[k+j];
-            }
-            corr/=(Math.sqrt(tNorm)*Math.sqrt(cNorm)+1e-12);
-            if(corr>bestCorr){bestCorr=corr;bestPos=k}
-          }
-          posIn=bestPos;
-        }else{posIn=expectedNext}
-      }else{posIn=expectedNext}
-    }
-    for(let i=0;i<targetLen;i++) output[i]/=(norm[i]+1e-12);
-    outBuf.copyToChannel(output,c);
+    let energy=0;for(let i=0;i<origLen;i+=32)energy+=inputs[c][i]*inputs[c][i];
+    if(energy>mostEnergy){mostEnergy=energy;reference=c}
   }
+  const input=inputs[reference],output=outputs[reference];
+  for(let posOut=0;posOut<targetLen;posOut+=hop){
+    const frameLen=Math.min(winLen,targetLen-posOut);
+    const expected=Math.max(0,Math.min(origLen-frameLen,Math.round(posOut/ratio)));
+    let posIn=expected;
+    const overlap=Math.min(winLen-hop,frameLen);
+    if(posOut>0&&overlap>0){
+      const start=Math.max(0,expected-search),end=Math.min(origLen-frameLen,expected+search);
+      const score=k=>{
+        let corr=0,a=0,b=0;
+        for(let j=0;j<overlap;j+=4){
+          const ref=output[posOut+j]/(norm[posOut+j]+1e-12),value=input[k+j];
+          corr+=ref*value;a+=ref*ref;b+=value*value;
+        }
+        return corr/(Math.sqrt(a*b)+1e-12)-Math.abs(k-expected)*1e-8;
+      };
+      let best=score(expected);
+      const consider=k=>{const value=score(k);if(value>best){best=value;posIn=k}};
+      // Coarse search followed by sample-level refinement around its best candidate.
+      for(let k=start;k<=end;k+=8)consider(k);
+      const center=posIn;
+      for(let k=Math.max(start,center-7);k<=Math.min(end,center+7);k++)consider(k);
+    }
+    for(let i=0;i<frameLen;i++){
+      const weight=windowValues[i];norm[posOut+i]+=weight;
+      for(let c=0;c<ch;c++)outputs[c][posOut+i]+=inputs[c][posIn+i]*weight;
+    }
+    yield;
+  }
+  for(let c=0;c<ch;c++)for(let i=0;i<targetLen;i++)outputs[c][i]/=norm[i]+1e-12;
   return outBuf;
+}
+
+function solaTimeStretch(buffer,targetLen,sr){
+  const frames=solaFrames(buffer,targetLen,sr);let step;
+  do{step=frames.next()}while(!step.done);
+  return step.value;
+}
+
+async function solaTimeStretchAsync(buffer,targetLen,sr,version){
+  const frames=solaFrames(buffer,targetLen,sr);let sliceStart=Date.now();
+  while(version===STATE.processingVersion){
+    const step=frames.next();if(step.done)return step.value;
+    if(Date.now()-sliceStart>=8){
+      await new Promise(resolve=>setTimeout(resolve,0));sliceStart=Date.now();
+    }
+  }
+  return null;
 }
 
 function precomputeSpectrum(buffer){
@@ -558,42 +613,55 @@ function estimatePitch(){
   const end = Math.min(start+frameLen,data.length);
   const frame = data.slice(start,end);
   const n=frame.length;
-  let energy=0;for(let i=0;i<n;i++)energy+=frame[i]*frame[i];
+  let mean=0;for(let i=0;i<n;i++)mean+=frame[i];mean/=n||1;
+  let energy=0;for(let i=0;i<n;i++){frame[i]-=mean;energy+=frame[i]*frame[i]}
   if(n<2||Math.sqrt(energy/n)<0.001){
     document.getElementById('pitchDisplay').textContent='f₀: -- Hz';return;
   }
   const minLag=Math.max(1,Math.round(sr/500));
-  const maxLag=Math.min(n-1,Math.round(sr/50));
-  let bestLag=minLag,bestCorr=-Infinity;
-  for(let lag=minLag;lag<=maxLag;lag++){
-    let corr=0;
-    for(let i=0;i<n-lag;i++) corr+=frame[i]*frame[i+lag];
-    if(corr>bestCorr){bestCorr=corr;bestLag=lag}
+  const maxLag=Math.min(Math.floor(n/2),Math.round(sr/50));
+  const correlations=new Float32Array(maxLag+2);
+  for(let lag=Math.max(1,minLag-1);lag<=maxLag+1;lag++){
+    let corr=0,left=0,right=0;
+    for(let i=0;i<n-lag;i++){corr+=frame[i]*frame[i+lag];left+=frame[i]*frame[i];right+=frame[i+lag]*frame[i+lag]}
+    correlations[lag]=corr/(Math.sqrt(left*right)+1e-12);
   }
-  const f0=sr/bestLag;
-  document.getElementById('pitchDisplay').textContent = `f₀: ${f0.toFixed(0)} Hz`;
+  for(let lag=minLag;lag<=maxLag;lag++){
+    const a=correlations[lag-1],b=correlations[lag],c=correlations[lag+1];
+    if(b>.75&&b>=a&&b>c){
+      const denominator=a-2*b+c;
+      const offset=Math.abs(denominator)>1e-9?.5*(a-c)/denominator:0;
+      document.getElementById('pitchDisplay').textContent=`f₀: ${(sr/(lag+offset)).toFixed(0)} Hz`;return;
+    }
+  }
+  document.getElementById('pitchDisplay').textContent='f₀: -- Hz';
 }
 
 // ============================================================
 // PLAYBACK
 // ============================================================
 async function playBuffer(buffer,speed=1.0){
-  if(!buffer||!STATE.audioCtx||STATE.isProcessing||STATE.isLoading||STATE.isRecording) return;
-  const version=STATE.processingVersion;
-  try{if(STATE.audioCtx.state==='suspended')await STATE.audioCtx.resume()}
-  catch(err){setStatus('ready','无法播放: '+err.message);return}
-  if(version!==STATE.processingVersion||STATE.isLoading||STATE.isRecording) return;
+  if(!buffer||!STATE.audioCtx||STATE.isProcessing||STATE.isLoading||STATE.isRecording||STATE.isRequestingMic) return;
   stopAll();
+  const version=STATE.processingVersion;
+  const playbackVersion=++STATE.playbackVersion;
+  STATE.isStartingPlayback=true;updateButtons();
+  try{
+  if(STATE.audioCtx.state==='suspended')await STATE.audioCtx.resume();
+  if(version!==STATE.processingVersion||playbackVersion!==STATE.playbackVersion||STATE.isLoading||STATE.isRecording) return;
   const source = STATE.audioCtx.createBufferSource();
   source.buffer = buffer; source.playbackRate.value = speed;
   source.connect(STATE.analyserNode);
   source.onended = ()=>{
     const idx=STATE.playingSources.indexOf(source);
-    if(idx>=0) STATE.playingSources.splice(idx,1);
+    if(idx<0)return;
+    STATE.playingSources.splice(idx,1);source.disconnect?.();
     if(!STATE.playingSources.length){setStatus('ready','就绪');updateButtons()}
   };
   STATE.playingSources.push(source); source.start();
   setStatus('playing',`播放中 (${speed.toFixed(1)}×)`); updateButtons(); startVisualization();
+  }catch(err){if(playbackVersion===STATE.playbackVersion){stopAll();setStatus('ready','无法播放: '+err.message)}}
+  finally{if(playbackVersion===STATE.playbackVersion){STATE.isStartingPlayback=false;updateButtons()}}
 }
 function playOriginal(){
   const buf = STATE.filterEnabled ? STATE.filteredBuffer : STATE.originalBuffer;
@@ -603,7 +671,8 @@ function playChanged(){
   return playBuffer(STATE.processedBuffer,STATE.currentSpeed);
 }
 function stopAll(){
-  STATE.playingSources.forEach(s=>{try{s.stop()}catch(e){}});
+  ++STATE.playbackVersion;STATE.isStartingPlayback=false;
+  STATE.playingSources.forEach(s=>{try{s.stop();s.disconnect?.()}catch(e){}});
   STATE.playingSources=[]; setStatus('ready','就绪'); updateButtons();
 }
 
@@ -646,15 +715,17 @@ function downloadWAV(){
 // MODE / SPEED / FILTER
 // ============================================================
 function selectMode(mode,el){
+  if(!MODES[mode])return;
   STATE.currentMode=mode; STATE.modeAlpha=MODES[mode].alpha;
-  document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('selected'));
+  document.querySelectorAll('.mode-btn').forEach(b=>{b.classList.remove('selected');b.setAttribute('aria-pressed','false')});
   el.classList.add('selected');
+  el.setAttribute('aria-pressed','true');
   if(STATE.originalBuffer){processAudio();updateInfo()}
 }
 function setSpeed(speed){
   STATE.currentSpeed=speed;
   document.getElementById('infoSpeed').textContent=speed.toFixed(1)+'×';
-  document.querySelectorAll('[data-speed]').forEach(b=>b.classList.toggle('active',Number(b.dataset.speed)===speed));
+  document.querySelectorAll('[data-speed]').forEach(b=>{const selected=Number(b.dataset.speed)===speed;b.classList.toggle('active',selected);b.setAttribute('aria-pressed',String(selected))});
   STATE.playingSources.forEach(source=>{source.playbackRate.value=speed});
   if(STATE.playingSources.length)setStatus('playing',`播放中 (${speed.toFixed(1)}×)`);
 }
@@ -662,6 +733,8 @@ function toggleFilter(on){
   STATE.filterEnabled=on;
   document.getElementById('btnFilterOn').classList.toggle('active',on);
   document.getElementById('btnFilterOff').classList.toggle('active',!on);
+  document.getElementById('btnFilterOn').setAttribute('aria-pressed',String(on));
+  document.getElementById('btnFilterOff').setAttribute('aria-pressed',String(!on));
   if(STATE.originalBuffer) processAudio();
 }
 
@@ -671,6 +744,8 @@ function toggleFilter(on){
 function toggleTheory(){
   document.getElementById('theoryContent').classList.toggle('show');
   document.getElementById('theoryToggle').classList.toggle('open');
+  const expanded=document.getElementById('theoryToggle').getAttribute('aria-expanded')!=='true';
+  document.getElementById('theoryToggle').setAttribute('aria-expanded',String(expanded));
 }
 
 // ============================================================
@@ -688,6 +763,7 @@ function resetAll(){
 // UI HELPERS
 // ============================================================
 function setStatus(state,text){
+  STATE.visualizationDirty=true;
   document.getElementById('statusText').textContent=text;
   document.getElementById('statusDot').className='status-dot '+state;
 }
@@ -704,10 +780,11 @@ function updateButtons(){
   document.getElementById('btnUpload').disabled=rec||STATE.isRequestingMic;
   document.getElementById('fileInput').disabled=rec||STATE.isRequestingMic;
   document.getElementById('btnStopRecord').disabled=!rec;
-  document.getElementById('btnPlayOrig').disabled=!has||playing||rec||busy;
-  document.getElementById('btnPlayChanged').disabled=!has||playing||rec||busy||!STATE.processedBuffer;
-  document.getElementById('btnStop').disabled=!playing;
+  document.getElementById('btnPlayOrig').disabled=!(STATE.filterEnabled?STATE.filteredBuffer:STATE.originalBuffer)||playing||rec||busy||STATE.isStartingPlayback;
+  document.getElementById('btnPlayChanged').disabled=!has||playing||rec||busy||!STATE.processedBuffer||STATE.isStartingPlayback;
+  document.getElementById('btnStop').disabled=!playing&&!STATE.isStartingPlayback;
   document.getElementById('btnDownload').disabled=!STATE.processedBuffer||rec||busy;
+  document.querySelectorAll('.mode-btn,#btnFilterOn,#btnFilterOff').forEach(button=>{button.disabled=rec||STATE.isRequestingMic});
 }
 
 // ============================================================
@@ -715,18 +792,35 @@ function updateButtons(){
 // ============================================================
 function startVisualization(){
   if(STATE.animationId) return;
-  function loop(){STATE.animationId=requestAnimationFrame(loop);drawWaveform();drawSpectrum();drawSpectrogram()}
+  function loop(time=0){
+    STATE.animationId=requestAnimationFrame(loop);
+    if(document.hidden||time-STATE.lastVisualizationTime<1000/30)return;
+    STATE.lastVisualizationTime=time;
+    if(!STATE.isRecording&&!STATE.playingSources.length&&!STATE.visualizationDirty)return;
+    STATE.visualizationDirty=false;drawWaveform();drawSpectrum();drawSpectrogram();
+  }
   loop();
+}
+window.addEventListener('resize',()=>{STATE.visualizationDirty=true});
+document.addEventListener?.('visibilitychange',()=>{STATE.visualizationDirty=true});
+
+function canvasSurface(id){
+  const canvas=document.getElementById(id),ctx=canvas.getContext('2d');
+  const dpr=window.devicePixelRatio||1,rect=canvas.parentElement.getBoundingClientRect();
+  const width=Math.max(1,Math.round(rect.width*dpr)),height=Math.max(1,Math.round(rect.height*dpr));
+  if(canvas.width!==width)canvas.width=width;
+  if(canvas.height!==height)canvas.height=height;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  return {ctx,W:rect.width,H:rect.height};
+}
+
+function frequencyData(analyser){
+  if(!STATE.frequencyData||STATE.frequencyData.length!==analyser.frequencyBinCount)STATE.frequencyData=new Uint8Array(analyser.frequencyBinCount);
+  analyser.getByteFrequencyData(STATE.frequencyData);return STATE.frequencyData;
 }
 
 function drawWaveform(){
-  const canvas=document.getElementById('canvasWave');
-  const ctx=canvas.getContext('2d');
-  const dpr=window.devicePixelRatio||1;
-  const rect=canvas.parentElement.getBoundingClientRect();
-  canvas.width=rect.width*dpr;canvas.height=rect.height*dpr;
-  canvas.style.width=rect.width+'px';canvas.style.height=rect.height+'px';
-  ctx.scale(dpr,dpr);const W=rect.width,H=rect.height;
+  const {ctx,W,H}=canvasSurface('canvasWave');
   ctx.fillStyle='#0e1622';ctx.fillRect(0,0,W,H);
   // Grid
   ctx.strokeStyle='rgba(0,220,130,.05)';ctx.lineWidth=.5;
@@ -739,7 +833,8 @@ function drawWaveform(){
   const analyser=STATE.isRecording?STATE.recordingAnalyser:STATE.analyserNode;
   if(!analyser)return;
   const bufLen=analyser.fftSize;
-  const timeData=new Float32Array(bufLen);
+  if(!STATE.timeData||STATE.timeData.length!==bufLen)STATE.timeData=new Float32Array(bufLen);
+  const timeData=STATE.timeData;
   analyser.getFloatTimeDomainData(timeData);
   let hasSignal=false;
   for(let i=0;i<timeData.length;i++){if(Math.abs(timeData[i])>.001){hasSignal=true;break}}
@@ -763,13 +858,7 @@ function drawWaveform(){
 }
 
 function drawSpectrum(){
-  const canvas=document.getElementById('canvasSpectrum');
-  const ctx=canvas.getContext('2d');
-  const dpr=window.devicePixelRatio||1;
-  const rect=canvas.parentElement.getBoundingClientRect();
-  canvas.width=rect.width*dpr;canvas.height=rect.height*dpr;
-  canvas.style.width=rect.width+'px';canvas.style.height=rect.height+'px';
-  ctx.scale(dpr,dpr);const W=rect.width,H=rect.height;
+  const {ctx,W,H}=canvasSurface('canvasSpectrum');
   ctx.fillStyle='#0e1622';ctx.fillRect(0,0,W,H);
   ctx.strokeStyle='rgba(56,152,255,.04)';ctx.lineWidth=.5;
   for(let x=0;x<W;x+=50){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke()}
@@ -779,8 +868,7 @@ function drawSpectrum(){
   const analyser=STATE.isRecording?STATE.recordingAnalyser:STATE.analyserNode;
   if(analyser){
     const bufLen=analyser.frequencyBinCount;
-    const freqData=new Uint8Array(bufLen);
-    analyser.getByteFrequencyData(freqData);
+    const freqData=frequencyData(analyser);
     let sum=0;for(let i=0;i<freqData.length;i++) sum+=freqData[i];
     if(sum>10){spectrumData=freqData;numBins=bufLen}
   }
@@ -827,23 +915,15 @@ function heatmapColor(t){
 }
 
 function drawSpectrogram(){
-  const canvas=document.getElementById('canvasSpectrogram');
-  const ctx=canvas.getContext('2d');
-  const dpr=window.devicePixelRatio||1;
-  const rect=canvas.parentElement.getBoundingClientRect();
-  canvas.width=rect.width*dpr;canvas.height=rect.height*dpr;
-  canvas.style.width=rect.width+'px';canvas.style.height=rect.height+'px';
-  ctx.scale(dpr,dpr);const W=rect.width,H=rect.height;
+  const {ctx,W,H}=canvasSurface('canvasSpectrogram');
   ctx.fillStyle='#080c12';ctx.fillRect(0,0,W,H);
   if(!STATE.analyserNode) return;
   const analyser=STATE.isRecording?STATE.recordingAnalyser:STATE.analyserNode;
   if(!analyser)return;
   const bufLen=analyser.frequencyBinCount;
-  const freqData=new Uint8Array(bufLen);
-  analyser.getByteFrequencyData(freqData);
+  const freqData=frequencyData(analyser);
   let sum=0;for(let i=0;i<freqData.length;i++) sum+=freqData[i];
-  if(sum<20) return;
-  STATE.spectrogramData.push(new Uint8Array(freqData));
+  if(sum>=20&&(STATE.isRecording||STATE.playingSources.length))STATE.spectrogramData.push(new Uint8Array(freqData));
   const maxCols=300;
   while(STATE.spectrogramData.length>maxCols) STATE.spectrogramData.shift();
   const cols=STATE.spectrogramData.length;
@@ -852,11 +932,12 @@ function drawSpectrogram(){
   for(let c=0;c<cols;c++){
     const x=W-(cols-c)*colW;
     const colData=STATE.spectrogramData[c];
-    for(let r=0;r<H;r++){
-      const idx=Math.floor((1-r/H)*bufLen);
+    const rows=Math.min(128,Math.ceil(H));
+    for(let r=0;r<rows;r++){
+      const idx=Math.floor((1-r/rows)*bufLen);
       const val=colData[Math.min(idx,bufLen-1)]/255;
       ctx.fillStyle=heatmapColor(val);
-      ctx.fillRect(Math.floor(x),r,Math.ceil(colW)+1,1);
+      ctx.fillRect(Math.floor(x),r*H/rows,Math.ceil(colW)+1,Math.ceil(H/rows));
     }
   }
 }
@@ -900,8 +981,10 @@ async function generateDemoSignal(){
 // INIT
 // ============================================================
 window.addEventListener('DOMContentLoaded',()=>{
-  initAudio();selectMode('m2f',document.querySelector('[data-mode="m2f"]'));
-  startVisualization();generateDemoSignal();
+  try{
+    initAudio();selectMode('m2f',document.querySelector('[data-mode="m2f"]'));
+    startVisualization();generateDemoSignal().catch(err=>setStatus('ready','无法生成演示音频: '+err.message));
+  }catch(err){setStatus('ready',err.message);updateButtons()}
 });
 </script>
 </body>
