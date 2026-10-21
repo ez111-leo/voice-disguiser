@@ -210,7 +210,7 @@ body{
       <div class="btn-row">
         <button class="btn primary" id="btnRecord" onclick="startRecord()">● 录音</button>
         <button class="btn" id="btnStopRecord" onclick="stopRecord()" disabled>■ 停止</button>
-        <button class="btn accent2" onclick="document.getElementById('fileInput').click()">📁 上传WAV</button>
+        <button class="btn accent2" id="btnUpload" onclick="document.getElementById('fileInput').click()">📁 上传音频</button>
         <input type="file" id="fileInput" accept="audio/*" style="display:none" onchange="handleFile(event)">
       </div>
     </div>
@@ -219,7 +219,7 @@ body{
     <div class="panel-section">
       <h3>🔮 变声模式</h3>
       <div class="mode-btn" data-mode="m2f" onclick="selectMode('m2f',this)" style="margin-bottom:3px">男声 → 女声 α=1.6</div>
-      <div class="mode-btn" data-mode="f2m" onclick="selectMode('f2m',this)" style="margin-bottom:3px">女声 → 男声 α=0.6</div>
+      <div class="mode-btn" data-mode="f2m" onclick="selectMode('f2m',this)" style="margin-bottom:3px">女声 → 男声 α=0.625</div>
       <div class="mode-btn" data-mode="m2c" onclick="selectMode('m2c',this)" style="margin-bottom:3px">男声 → 童声 α=2.2</div>
       <div class="mode-btn" data-mode="f2c" onclick="selectMode('f2c',this)">女声 → 童声 α=1.5</div>
     </div>
@@ -235,9 +235,9 @@ body{
       </div>
       <div class="info-row" style="margin-top:6px"><span>变速播放</span><span class="val" id="infoSpeed">1.0×</span></div>
       <div class="btn-row" style="margin-top:4px">
-        <button class="btn small" onclick="setSpeed(0.6)">0.6× 慢</button>
-        <button class="btn small active" id="btnSpeed1" onclick="setSpeed(1.0)">1.0×</button>
-        <button class="btn small" onclick="setSpeed(1.6)">1.6× 快</button>
+        <button class="btn small" data-speed="0.6" onclick="setSpeed(0.6)">0.6× 慢</button>
+        <button class="btn small active" data-speed="1" onclick="setSpeed(1.0)">1.0×</button>
+        <button class="btn small" data-speed="1.6" onclick="setSpeed(1.6)">1.6× 快</button>
       </div>
     </div>
 
@@ -256,25 +256,25 @@ body{
     </div>
     <div class="theory-content" id="theoryContent">
       <div class="theory-inner">
-        <b>每个人的声音由音色和音调决定</b><br>
-        音调 → <b>基频 (f₀)</b>，音色 → <b>共振峰频率</b><br><br>
+        <b>基频和共振峰是声音的部分特征</b><br>
+        本演示同时移动基频与共振峰，不能独立控制音色，也不保证性别转换或身份匿名。<br><br>
         <b>表1 男声、女声、童声关系</b>
         <table>
           <tr><th>类型</th><th>基频 f₀</th><th>共振峰</th><th>转换</th><th>α</th></tr>
           <tr><td>男声</td><td>50~170Hz</td><td>较低</td><td>→女</td><td>1.6</td></tr>
-          <tr><td>女声</td><td>170~270Hz</td><td>中等</td><td>→男</td><td>0.6</td></tr>
+          <tr><td>女声</td><td>170~270Hz</td><td>中等</td><td>→男</td><td>0.625</td></tr>
           <tr><td>童声</td><td>&gt;270Hz</td><td>较高</td><td>←男</td><td>2.2</td></tr>
         </table>
         <b>核心原理</b><br>
         · 基频伸展 + 共振峰伸展 → 男→女→童 (α&gt;1)<br>
         · 基频收缩 + 共振峰收缩 → 童→女→男 (α&lt;1)<br><br>
-        <b>两种实现方法</b><br>
-        <b>方法A</b>：重采样(改变音高) + SOLA时域拉伸(恢复时长)<br>
-        <b>方法B</b>：LPC分析→分离激励源/声道→分别搬移→合成<br><br>
+        表中范围仅作教学示意，不能据此判断说话者性别。<br><br>
+        <b>当前实现</b><br>
+        重采样(改变音高) + SOLA时域拉伸(恢复时长)。未实现 LPC。<br><br>
         <b>关键参数</b><br>
         · 伸缩因子 α = 新基频 / 原基频<br>
         · SOLA窗长40ms，重叠75%，搜索±10ms<br>
-        · 带通滤波80-4000Hz去除噪声
+        · IIR 带通滤波80-4000Hz衰减带外信号，不能去除全部噪声
       </div>
     </div>
   </div>
@@ -308,6 +308,9 @@ const STATE = {
   mediaRecorder: null, recordedChunks: [],
   animationId: null, playingSources: [],
   spectrogramData: [], precomputedSpectrum: null,
+  processingVersion: 0, inputVersion: 0, isProcessing: false,
+  isLoading: false, isRequestingMic: false,
+  microphoneSource: null, recordingAnalyser: null,
 };
 const MODES = {
   m2f:{alpha:1.6,name:'男声→女声'},
@@ -327,37 +330,65 @@ function initAudio(){
   STATE.analyserNode.smoothingTimeConstant = 0.7;
   STATE.analyserNode.connect(STATE.audioCtx.destination);
 
-  STATE.lowShelf = STATE.audioCtx.createBiquadFilter();
-  STATE.lowShelf.type = 'highpass'; STATE.lowShelf.frequency.value = 80; STATE.lowShelf.Q.value = 0.7;
-  STATE.highShelf = STATE.audioCtx.createBiquadFilter();
-  STATE.highShelf.type = 'lowpass'; STATE.highShelf.frequency.value = 4000; STATE.highShelf.Q.value = 0.7;
-  STATE.lowShelf.connect(STATE.highShelf);
-  STATE.highShelf.connect(STATE.analyserNode);
 }
 
 // ============================================================
 // RECORDING
 // ============================================================
 async function startRecord(){
-  initAudio();
+  if(STATE.isRecording||STATE.isRequestingMic||STATE.isLoading||STATE.isProcessing) return;
+  STATE.isRequestingMic=true; updateButtons();
+  let stream;
   try{
-    const stream = await navigator.mediaDevices.getUserMedia({audio:{sampleRate:44100}});
+    initAudio();
+    if(STATE.audioCtx.state==='suspended') await STATE.audioCtx.resume();
+    stream = await navigator.mediaDevices.getUserMedia({audio:true});
+    stopAll();
     STATE.mediaRecorder = new MediaRecorder(stream);
+    const recorder=STATE.mediaRecorder, inputVersion=++STATE.inputVersion;
+    ++STATE.processingVersion;
+    STATE.originalBuffer=null; STATE.processedBuffer=null; STATE.filteredBuffer=null;
+    STATE.precomputedSpectrum=null;
+    document.getElementById('pitchDisplay').textContent='f₀: -- Hz';
+    document.getElementById('infoFs').textContent='--';
+    document.getElementById('infoDur').textContent='-- s';
+    STATE.recordingAnalyser=STATE.audioCtx.createAnalyser();
+    STATE.recordingAnalyser.fftSize=2048;
+    STATE.microphoneSource=STATE.audioCtx.createMediaStreamSource(stream);
+    // The recording analyser deliberately has no speaker connection.
+    STATE.microphoneSource.connect(STATE.recordingAnalyser);
+    STATE.spectrogramData=[];
     STATE.recordedChunks = [];
     STATE.mediaRecorder.ondataavailable = e => {if(e.data.size>0) STATE.recordedChunks.push(e.data)};
     STATE.mediaRecorder.onstop = async ()=>{
-      const blob = new Blob(STATE.recordedChunks,{type:'audio/webm'});
-      STATE.originalBuffer = await STATE.audioCtx.decodeAudioData(await blob.arrayBuffer());
-      await processAudio(); updateInfo(); updateButtons();
+      STATE.isRecording=false; STATE.isLoading=true;
+      STATE.microphoneSource?.disconnect(); STATE.microphoneSource=null;
+      STATE.recordingAnalyser=null;
+      stream.getTracks().forEach(t=>t.stop());
+      updateButtons(); setStatus('ready','正在解码录音...');
+      try{
+        const blob=new Blob(STATE.recordedChunks,{type:recorder.mimeType});
+        const decoded=await STATE.audioCtx.decodeAudioData(await blob.arrayBuffer());
+        if(inputVersion!==STATE.inputVersion) return;
+        STATE.originalBuffer=decoded; STATE.isLoading=false;
+        await processAudio(); updateInfo();
+      }catch(err){if(inputVersion===STATE.inputVersion)setStatus('ready','录音解码失败: '+err.message)}
+      finally{if(inputVersion===STATE.inputVersion){STATE.isLoading=false;updateButtons()}}
     };
     STATE.mediaRecorder.start(); STATE.isRecording = true;
     updateButtons(); setStatus('recording','录音中...'); startVisualization();
-  }catch(err){alert('无法访问麦克风: '+err.message)}
+  }catch(err){
+    stream?.getTracks().forEach(t=>t.stop());
+    STATE.microphoneSource?.disconnect(); STATE.microphoneSource=null;
+    STATE.recordingAnalyser=null; STATE.isRecording=false;
+    setStatus('ready','无法开始录音: '+err.message);
+  }finally{STATE.isRequestingMic=false;updateButtons()}
 }
 function stopRecord(){
   if(STATE.mediaRecorder&&STATE.isRecording){
+    STATE.isLoading=true; STATE.isRecording=false;
     STATE.mediaRecorder.stop(); STATE.mediaRecorder.stream.getTracks().forEach(t=>t.stop());
-    STATE.isRecording = false; setStatus('ready','处理中...'); updateButtons();
+    setStatus('ready','处理中...'); updateButtons();
   }
 }
 
@@ -366,10 +397,23 @@ function stopRecord(){
 // ============================================================
 async function handleFile(event){
   const file = event.target.files[0]; if(!file) return;
-  initAudio();
-  STATE.originalBuffer = await STATE.audioCtx.decodeAudioData(await file.arrayBuffer());
-  await processAudio(); updateInfo(); updateButtons();
-  setStatus('ready','文件已加载'); startVisualization();
+  if(STATE.isRecording||STATE.isRequestingMic) return;
+  const version=++STATE.inputVersion;
+  ++STATE.processingVersion; STATE.isProcessing=false; STATE.isLoading=true;
+  stopAll(); STATE.originalBuffer=null; STATE.processedBuffer=null;
+  STATE.filteredBuffer=null; STATE.precomputedSpectrum=null; STATE.spectrogramData=[];
+  document.getElementById('pitchDisplay').textContent='f₀: -- Hz';
+  document.getElementById('infoFs').textContent='--';
+  document.getElementById('infoDur').textContent='-- s';
+  updateButtons(); setStatus('ready','正在加载音频...');
+  try{
+    initAudio();
+    const decoded=await STATE.audioCtx.decodeAudioData(await file.arrayBuffer());
+    if(version!==STATE.inputVersion) return;
+    STATE.originalBuffer=decoded; STATE.isLoading=false;
+    await processAudio(); updateInfo(); startVisualization();
+  }catch(err){if(version===STATE.inputVersion)setStatus('ready','无法读取音频: '+err.message)}
+  finally{if(version===STATE.inputVersion){STATE.isLoading=false;updateButtons();event.target.value=''}}
 }
 
 // ============================================================
@@ -377,72 +421,96 @@ async function handleFile(event){
 // ============================================================
 async function processAudio(){
   if(!STATE.originalBuffer) return;
+  const version=++STATE.processingVersion;
   const alpha = STATE.modeAlpha;
   const orig = STATE.originalBuffer;
   const sr = orig.sampleRate, ch = orig.numberOfChannels, len = orig.length;
-
+  const filterEnabled=STATE.filterEnabled;
+  STATE.isProcessing=true; STATE.processedBuffer=null; STATE.filteredBuffer=null;
+  stopAll(); updateButtons(); setStatus('ready','处理中...');
+  try{
+  let filtered=orig;
   // Bandpass filter
+  if(filterEnabled){
   const offlineCtx = new OfflineAudioContext(ch,len,sr);
   const src = offlineCtx.createBufferSource(); src.buffer = orig;
   const hp = offlineCtx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=80; hp.Q.value=0.7;
   const lp = offlineCtx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=4000; lp.Q.value=0.7;
   src.connect(hp); hp.connect(lp); lp.connect(offlineCtx.destination); src.start(0);
-  STATE.filteredBuffer = await offlineCtx.startRendering();
+  filtered = await offlineCtx.startRendering();
+  if(version!==STATE.processingVersion) return false;
+  }
 
   // Resample - change pitch & formants
-  let resampledLen;
-  if(alpha>1) resampledLen = Math.round(len*100/Math.round(alpha*100));
-  else resampledLen = Math.round(len*Math.round(100/alpha)/100);
-  resampledLen = Math.max(1,resampledLen);
+  const resampledLen=Math.max(1,Math.round(len/alpha));
 
   const resampleCtx = new OfflineAudioContext(ch,resampledLen,sr);
-  const rsSrc = resampleCtx.createBufferSource(); rsSrc.buffer = STATE.filteredBuffer;
+  const rsSrc = resampleCtx.createBufferSource(); rsSrc.buffer = filtered;
   rsSrc.playbackRate.value = alpha;
   rsSrc.connect(resampleCtx.destination); rsSrc.start(0);
   const resampledBuffer = await resampleCtx.startRendering();
+  if(version!==STATE.processingVersion) return false;
 
   // SOLA time-stretch
   STATE.processedBuffer = solaTimeStretch(resampledBuffer,len,sr);
-  precomputeSpectrum(STATE.originalBuffer);
-  estimatePitch();
+  STATE.filteredBuffer=filtered;
+  precomputeSpectrum(orig); estimatePitch();
+  setStatus('ready','音频已就绪');
+  return true;
+  }catch(err){if(version===STATE.processingVersion)setStatus('ready','处理失败: '+err.message);return false}
+  finally{if(version===STATE.processingVersion){STATE.isProcessing=false;updateButtons()}}
 }
 
 // SOLA
 function solaTimeStretch(buffer,targetLen,sr){
   const ch = buffer.numberOfChannels, origLen = buffer.length;
-  if(Math.abs(origLen-targetLen)<10||origLen<100) return buffer;
+  if(origLen===targetLen) return buffer;
   const alpha = targetLen/origLen;
-  const winLen = Math.round(0.04*sr);
+  const winLen = Math.min(origLen,targetLen,Math.round(0.04*sr));
   const hopAna = Math.max(4,Math.round(winLen*0.25));
   const hopSyn = Math.max(4,Math.round(hopAna*alpha));
   const searchLen = Math.round(0.01*sr);
   const newCtx = new OfflineAudioContext(ch,targetLen,sr);
   const outBuf = newCtx.createBuffer(ch,targetLen,sr);
+  // Clips too small for a useful analysis window still retain the requested duration.
+  if(Math.min(origLen,targetLen)<100){
+    for(let c=0;c<ch;c++){
+      const input=buffer.getChannelData(c),output=outBuf.getChannelData(c);
+      for(let i=0;i<targetLen;i++){
+        const pos=targetLen===1?0:i*(origLen-1)/(targetLen-1),left=Math.floor(pos),fraction=pos-left;
+        output[i]=input[left]*(1-fraction)+input[Math.min(left+1,origLen-1)]*fraction;
+      }
+    }
+    return outBuf;
+  }
 
   for(let c=0;c<ch;c++){
     const input = buffer.getChannelData(c);
     const output = new Float32Array(targetLen);
     const norm = new Float32Array(targetLen);
     let posIn=0, posOut=0;
-    while(posIn+winLen<=origLen&&posOut+winLen<=targetLen){
+    while(posOut<targetLen){
       for(let i=0;i<winLen&&posOut+i<targetLen&&posIn+i<origLen;i++){
-        const w=0.5*(1-Math.cos(2*Math.PI*i/(winLen-1)));
+        const w=0.5*(1-Math.cos(2*Math.PI*(i+0.5)/winLen));
         output[posOut+i]+=input[posIn+i]*w; norm[posOut+i]+=w;
       }
-      posOut+=hopSyn; let expectedNext=posIn+hopAna;
+      posOut+=hopSyn;
+      // Anchor each search to the requested time mapping, rather than accumulating drift.
+      const expectedNext=Math.min(origLen-1,Math.round(posOut/alpha));
       if(expectedNext+winLen<=origLen){
         const sStart=Math.max(0,expectedNext-searchLen);
         const sEnd=Math.min(origLen-winLen,expectedNext+searchLen);
         if(sEnd>sStart&&posOut>winLen){
-          const refStart=Math.max(0,posOut-winLen);
-          const tLen=Math.min(searchLen,targetLen-refStart);
+          const refStart=posOut;
+          const tLen=Math.min(winLen-hopSyn,targetLen-refStart);
           let bestCorr=-Infinity,bestPos=expectedNext;
           for(let k=sStart;k<=sEnd;k++){
             if(k+tLen>origLen) continue;
             let corr=0,tNorm=0,cNorm=0;
             for(let j=0;j<tLen;j++){
-              corr+=output[refStart+j]*input[k+j];
-              tNorm+=output[refStart+j]*output[refStart+j];
+              const ref=output[refStart+j]/(norm[refStart+j]+1e-12);
+              corr+=ref*input[k+j];
+              tNorm+=ref*ref;
               cNorm+=input[k+j]*input[k+j];
             }
             corr/=(Math.sqrt(tNorm)*Math.sqrt(cNorm)+1e-12);
@@ -490,6 +558,10 @@ function estimatePitch(){
   const end = Math.min(start+frameLen,data.length);
   const frame = data.slice(start,end);
   const n=frame.length;
+  let energy=0;for(let i=0;i<n;i++)energy+=frame[i]*frame[i];
+  if(n<2||Math.sqrt(energy/n)<0.001){
+    document.getElementById('pitchDisplay').textContent='f₀: -- Hz';return;
+  }
   const minLag=Math.max(1,Math.round(sr/500));
   const maxLag=Math.min(n-1,Math.round(sr/50));
   let bestLag=minLag,bestCorr=-Infinity;
@@ -505,13 +577,16 @@ function estimatePitch(){
 // ============================================================
 // PLAYBACK
 // ============================================================
-function playBuffer(buffer,speed=1.0){
-  if(!buffer||!STATE.audioCtx) return;
+async function playBuffer(buffer,speed=1.0){
+  if(!buffer||!STATE.audioCtx||STATE.isProcessing||STATE.isLoading||STATE.isRecording) return;
+  const version=STATE.processingVersion;
+  try{if(STATE.audioCtx.state==='suspended')await STATE.audioCtx.resume()}
+  catch(err){setStatus('ready','无法播放: '+err.message);return}
+  if(version!==STATE.processingVersion||STATE.isLoading||STATE.isRecording) return;
   stopAll();
   const source = STATE.audioCtx.createBufferSource();
   source.buffer = buffer; source.playbackRate.value = speed;
-  if(STATE.filterEnabled&&STATE.lowShelf) source.connect(STATE.lowShelf);
-  else source.connect(STATE.analyserNode);
+  source.connect(STATE.analyserNode);
   source.onended = ()=>{
     const idx=STATE.playingSources.indexOf(source);
     if(idx>=0) STATE.playingSources.splice(idx,1);
@@ -522,10 +597,10 @@ function playBuffer(buffer,speed=1.0){
 }
 function playOriginal(){
   const buf = STATE.filterEnabled ? STATE.filteredBuffer : STATE.originalBuffer;
-  playBuffer(buf,STATE.currentSpeed);
+  return playBuffer(buf,STATE.currentSpeed);
 }
 function playChanged(){
-  playBuffer(STATE.processedBuffer,STATE.currentSpeed);
+  return playBuffer(STATE.processedBuffer,STATE.currentSpeed);
 }
 function stopAll(){
   STATE.playingSources.forEach(s=>{try{s.stop()}catch(e){}});
@@ -536,33 +611,35 @@ function stopAll(){
 // EXPORT WAV
 // ============================================================
 function downloadWAV(){
-  const buf = STATE.processedBuffer || STATE.originalBuffer;
+  if(STATE.isProcessing||STATE.isLoading||STATE.isRecording) return;
+  const buf = STATE.processedBuffer;
   if(!buf) return;
   const ch=buf.numberOfChannels,sr=buf.sampleRate,len=buf.length;
-  const data = buf.getChannelData(0);
+  const channels=Array.from({length:ch},(_,c)=>buf.getChannelData(c));
   // Convert to 16-bit PCM
-  const byteRate = sr*2;
-  const blockAlign = 2;
-  const dataSize = len*2;
+  const blockAlign = ch*2;
+  const byteRate = sr*blockAlign;
+  const dataSize = len*blockAlign;
   const buffer = new ArrayBuffer(44+dataSize);
   const view = new DataView(buffer);
   function w16(o,v){view.setUint16(o,v,true)}
   function w32(o,v){view.setUint32(o,v,true)}
   function ws(o,s){for(let i=0;i<s.length;i++) view.setUint8(o+i,s.charCodeAt(i))}
   ws(0,'RIFF'); w32(4,36+dataSize); ws(8,'WAVE');
-  ws(12,'fmt '); w32(16,16); w16(20,1); w16(22,1);
+  ws(12,'fmt '); w32(16,16); w16(20,1); w16(22,ch);
   w32(24,sr); w32(28,byteRate); w16(32,blockAlign); w16(34,16);
   ws(36,'data'); w32(40,dataSize);
-  for(let i=0;i<len;i++){
-    const sample = Math.max(-1,Math.min(1,isFinite(data[i])?data[i]:0));
-    view.setInt16(44+i*2, sample<0 ? sample*32768 : sample*32767, true);
+  for(let i=0;i<len;i++)for(let c=0;c<ch;c++){
+    const value=channels[c][i];
+    const sample = Math.max(-1,Math.min(1,isFinite(value)?value:0));
+    view.setInt16(44+(i*ch+c)*2, sample<0 ? sample*32768 : sample*32767, true);
   }
   const blob = new Blob([buffer],{type:'audio/wav'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href=url;
   const modeName = MODES[STATE.currentMode].name.replace('→','to');
   a.download = `voice_disguised_${modeName}.wav`;
-  a.click(); URL.revokeObjectURL(url);
+  a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 
 // ============================================================
@@ -577,7 +654,9 @@ function selectMode(mode,el){
 function setSpeed(speed){
   STATE.currentSpeed=speed;
   document.getElementById('infoSpeed').textContent=speed.toFixed(1)+'×';
-  document.querySelectorAll('#btnSpeed1').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('[data-speed]').forEach(b=>b.classList.toggle('active',Number(b.dataset.speed)===speed));
+  STATE.playingSources.forEach(source=>{source.playbackRate.value=speed});
+  if(STATE.playingSources.length)setStatus('playing',`播放中 (${speed.toFixed(1)}×)`);
 }
 function toggleFilter(on){
   STATE.filterEnabled=on;
@@ -620,12 +699,15 @@ function updateInfo(){
 }
 function updateButtons(){
   const has=!!STATE.originalBuffer,playing=STATE.playingSources.length>0,rec=STATE.isRecording;
-  document.getElementById('btnRecord').disabled=rec;
+  const busy=STATE.isProcessing||STATE.isLoading||STATE.isRequestingMic;
+  document.getElementById('btnRecord').disabled=rec||busy;
+  document.getElementById('btnUpload').disabled=rec||STATE.isRequestingMic;
+  document.getElementById('fileInput').disabled=rec||STATE.isRequestingMic;
   document.getElementById('btnStopRecord').disabled=!rec;
-  document.getElementById('btnPlayOrig').disabled=!has||playing;
-  document.getElementById('btnPlayChanged').disabled=!has||playing||!STATE.processedBuffer;
+  document.getElementById('btnPlayOrig').disabled=!has||playing||rec||busy;
+  document.getElementById('btnPlayChanged').disabled=!has||playing||rec||busy||!STATE.processedBuffer;
   document.getElementById('btnStop').disabled=!playing;
-  document.getElementById('btnDownload').disabled=!has;
+  document.getElementById('btnDownload').disabled=!STATE.processedBuffer||rec||busy;
 }
 
 // ============================================================
@@ -654,13 +736,15 @@ function drawWaveform(){
   ctx.beginPath();ctx.moveTo(0,H/2);ctx.lineTo(W,H/2);ctx.stroke();
 
   if(!STATE.analyserNode) return;
-  const bufLen=STATE.analyserNode.fftSize;
+  const analyser=STATE.isRecording?STATE.recordingAnalyser:STATE.analyserNode;
+  if(!analyser)return;
+  const bufLen=analyser.fftSize;
   const timeData=new Float32Array(bufLen);
-  STATE.analyserNode.getFloatTimeDomainData(timeData);
+  analyser.getFloatTimeDomainData(timeData);
   let hasSignal=false;
   for(let i=0;i<timeData.length;i++){if(Math.abs(timeData[i])>.001){hasSignal=true;break}}
 
-  if(!hasSignal&&STATE.originalBuffer){
+  if(!hasSignal&&STATE.originalBuffer&&!STATE.isRecording){
     const data=STATE.originalBuffer.getChannelData(0);
     const step=Math.max(1,Math.floor(data.length/W));
     ctx.beginPath();ctx.strokeStyle='rgba(0,220,130,.25)';ctx.lineWidth=1;
@@ -692,14 +776,15 @@ function drawSpectrum(){
   for(let y=0;y<H;y+=30){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()}
 
   let spectrumData=null,numBins=256;
-  if(STATE.analyserNode){
-    const bufLen=STATE.analyserNode.frequencyBinCount;
+  const analyser=STATE.isRecording?STATE.recordingAnalyser:STATE.analyserNode;
+  if(analyser){
+    const bufLen=analyser.frequencyBinCount;
     const freqData=new Uint8Array(bufLen);
-    STATE.analyserNode.getByteFrequencyData(freqData);
+    analyser.getByteFrequencyData(freqData);
     let sum=0;for(let i=0;i<freqData.length;i++) sum+=freqData[i];
     if(sum>10){spectrumData=freqData;numBins=bufLen}
   }
-  if(!spectrumData&&STATE.precomputedSpectrum){
+  if(!spectrumData&&STATE.precomputedSpectrum&&!STATE.isRecording){
     const pre=STATE.precomputedSpectrum;
     spectrumData=new Uint8Array(pre.length);
     for(let i=0;i<pre.length;i++) spectrumData[i]=Math.min(255,Math.floor(pre[i]*255));
@@ -751,9 +836,11 @@ function drawSpectrogram(){
   ctx.scale(dpr,dpr);const W=rect.width,H=rect.height;
   ctx.fillStyle='#080c12';ctx.fillRect(0,0,W,H);
   if(!STATE.analyserNode) return;
-  const bufLen=STATE.analyserNode.frequencyBinCount;
+  const analyser=STATE.isRecording?STATE.recordingAnalyser:STATE.analyserNode;
+  if(!analyser)return;
+  const bufLen=analyser.frequencyBinCount;
   const freqData=new Uint8Array(bufLen);
-  STATE.analyserNode.getByteFrequencyData(freqData);
+  analyser.getByteFrequencyData(freqData);
   let sum=0;for(let i=0;i<freqData.length;i++) sum+=freqData[i];
   if(sum<20) return;
   STATE.spectrogramData.push(new Uint8Array(freqData));
@@ -805,8 +892,8 @@ async function generateDemoSignal(){
   for(let i=0;i<len;i++) maxVal=Math.max(maxVal,Math.abs(data[i]));
   for(let i=0;i<len;i++) data[i]/=maxVal;
   STATE.originalBuffer=buffer;
-  await processAudio();updateInfo();updateButtons();
-  setStatus('ready','演示信号已就绪');
+  const completed=await processAudio();
+  if(completed&&STATE.originalBuffer===buffer){updateInfo();updateButtons();setStatus('ready','演示信号已就绪')}
 }
 
 // ============================================================
@@ -819,3 +906,4 @@ window.addEventListener('DOMContentLoaded',()=>{
 </script>
 </body>
 </html>
+
